@@ -7,9 +7,11 @@ The following plot shows the lower bound of lr-vae trained for 10 epochs while d
 ![](figures/lrvae-lowerbound.png)
 
 Reconstruction after 10 epochs of training (actual samples in the first row, reconstruction in the second):
+
 ![](figures/reconstruction_10.png)
 
 Some samples drawn after 10 epochs of training:
+
 ![](figures/sample_10.png)
 
 
