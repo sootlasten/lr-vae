@@ -14,10 +14,3 @@ Some samples drawn after 10 epochs of training:
 
 ![](figures/sample_10.png)
 
-For comparison, here are the same figures obtained by training VAE that uses the reparameterization trick for 10 epochs (but drawing only *1 sample from the posterior* for each datapoint):
-
-![](figures/reconstruction_reparam_10.png)
-
-![](figures/sample_reparam_10.png)
-
-
