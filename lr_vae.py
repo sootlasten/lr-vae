@@ -17,6 +17,8 @@ from torchvision.utils import save_image
 parser = argparse.ArgumentParser(description='VAE MNIST Example')
 parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                     help='input batch size for training (default: 128)')
+parser.add_argument('--nb-samples', type=int, default=5, 
+                    help='number of samples to draw from the posterior per datapoint')
 parser.add_argument('--epochs', type=int, default=10, metavar='N',
                     help='number of epochs to train (default: 10)')
 parser.add_argument('--no-cuda', action='store_true', default=False,
@@ -47,7 +49,7 @@ test_loader = torch.utils.data.DataLoader(
 class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
-
+        
         self.fc1 = nn.Linear(784, 400)  
         self.fc21 = nn.Linear(400, 20)
         self.fc22 = nn.Linear(400, 20)
@@ -66,7 +68,7 @@ class Encoder(nn.Module):
         return self.fc21(h), self.fc22(h)
 
     def forward(self, x):
-        mu, logvar = self.encode(x.view(-1, 784))
+        mu, logvar = self.encode(x)
         std = logvar.mul(0.5).exp()
         return Normal(mu, std)
             
@@ -86,28 +88,40 @@ class Decoder(nn.Module):
         return self.sigmoid(self.fc2(h))
         
 
-encoder = Encoder()
-decoder = Decoder()
-if args.cuda:
-    encoder.cuda()
-    decoder.cuda()
-
-enc_opt = optim.Adam(encoder.parameters(), lr=1e-3)
-dec_opt = optim.Adam(decoder.parameters(), lr=1e-3)
+def get_network():
+    """Returns the network (encoder & decoder) and optimizers."""
+    encoder = Encoder()
+    decoder = Decoder()
+    if args.cuda:
+        encoder.cuda()
+        decoder.cuda()
+    
+    enc_opt = optim.Adam(encoder.parameters(), lr=1e-3)
+    dec_opt = optim.Adam(decoder.parameters(), lr=1e-3)
+    return encoder, decoder, enc_opt, dec_opt
 
 
 def loss_function(recon_x, x, mu, var):
     """Reconstruction + KL divergence losses summed over all elements and batch."""
-    bce = F.binary_cross_entropy(recon_x, x.view(-1, 784), size_average=False, reduce=False).sum(dim=1)
+    bce = F.binary_cross_entropy(recon_x, x, size_average=False, reduce=False)
+    bce = bce.sum(dim=2)
+    
+    # a trick to collapse a dimension with identical elements
+    mu = mu.mean(dim=1)
+    var = var.mean(dim=1)
+    
     kl = -0.5 * torch.sum(1 + var.log() - mu.pow(2) - var, dim=1)
-    return kl, bce, (bce + kl).sum()
+    return kl, bce, (bce.mean(dim=1) + kl).sum()
 
 
-def train(epoch, prefix=''):
+def train(encoder, decoder, enc_opt, dec_opt, epoch, nb_samples=1, prefix=''):
     encoder.train()
     train_loss = 0
     for batch_idx, (data, _) in enumerate(train_loader):
+
         data = Variable(data)
+        batch_size = data.shape[0]
+        data = data.view(-1, 784).view(batch_size, 1, -1).repeat(1, nb_samples, 1)
         if args.cuda: data = data.cuda()
 
         # pass datapoints through
@@ -123,8 +137,8 @@ def train(epoch, prefix=''):
         
         # encoder backward
         enc_opt.zero_grad()
-        logprobs = normal.log_prob(z).sum(dim=1)
-        enc_loss = (logprobs*bce + kl).sum()
+        logprobs = normal.log_prob(z).sum(dim=2)
+        enc_loss = ((logprobs*bce).mean(dim=1) + kl).sum()
         enc_loss.backward()
         enc_opt.step()
         
@@ -141,13 +155,16 @@ def train(epoch, prefix=''):
     return train_loss
 
 
-def test(epoch):
+def test(encoder, decoder, enc_opt, dec_opt, epoch):
     encoder.eval()
     test_loss = 0
     for i, (data, _) in enumerate(test_loader):
-        if args.cuda:
-            data = data.cuda()
+
         data = Variable(data)
+        batch_size = data.shape[0]
+        data = data.view(-1, 784).view(batch_size, 1, -1)
+        if args.cuda: data = data.cuda()
+        
         normal = encoder(data)
         z = normal.sample()
         recon_batch = decoder(z)
@@ -156,7 +173,7 @@ def test(epoch):
 
         if i == 0:
             n = min(data.size(0), 8)
-            comparison = torch.cat([data[:n],
+            comparison = torch.cat([data[:n].view(n, 1, 28, 28),
                                   recon_batch.view(args.batch_size, 1, 28, 28)[:n]])
             save_image(comparison.data.cpu(),
                      'results/reconstruction_' + str(epoch) + '.png', nrow=n)
@@ -169,12 +186,14 @@ def test(epoch):
 if __name__ == '__main__':
     if not os.path.isdir('results'):
         os.makedirs('results')
+    
+    encoder, decoder, enc_opt, dec_opt = get_network()
         
     train_bounds = []
     test_bounds = []
     for epoch in range(1, args.epochs + 1):
-        train_loss = train(epoch)
-        test_loss = test(epoch)
+        train_loss = train(encoder, decoder, enc_opt, dec_opt, epoch, args.nb_samples)
+        test_loss = test(encoder, decoder, enc_opt, dec_opt, epoch)
              
         train_bounds.append(-train_loss)
         test_bounds.append(-test_loss)
@@ -194,7 +213,7 @@ if __name__ == '__main__':
         ax = fig.add_subplot(111)
         ax.plot(train_bounds, label='Train')
         ax.plot(test_bounds, label='Test')
-        ax.set_title('MNIST (with reparameterization), N=20')
+        ax.set_title('lr-vae')
         ax.set_xlabel('Epoch')
         ax.set_ylabel('Lower bound')
         ax.legend()
