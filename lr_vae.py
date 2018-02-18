@@ -103,7 +103,7 @@ def loss_function(recon_x, x, mu, var):
     return kl, bce, (bce + kl).sum()
 
 
-def train(epoch):
+def train(epoch, prefix=''):
     encoder.train()
     train_loss = 0
     for batch_idx, (data, _) in enumerate(train_loader):
@@ -130,8 +130,8 @@ def train(epoch):
         
         train_loss += dec_loss.data[0]
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
+            print('{}Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                prefix, epoch, batch_idx * len(data), len(train_loader.dataset),
                 100. * batch_idx / len(train_loader),
                 dec_loss.data[0] / len(data)))
 
@@ -166,37 +166,37 @@ def test(epoch):
     return test_loss
 
 
-if not os.path.isdir('results'):
-    os.makedirs('results')
+if __name__ == '__main__':
+    if not os.path.isdir('results'):
+        os.makedirs('results')
+        
+    train_bounds = []
+    test_bounds = []
+    for epoch in range(1, args.epochs + 1):
+        train_loss = train(epoch)
+        test_loss = test(epoch)
+             
+        train_bounds.append(-train_loss)
+        test_bounds.append(-test_loss)
     
-
-train_bounds = []
-test_bounds = []
-for epoch in range(1, args.epochs + 1):
-    train_loss = train(epoch)
-    test_loss = test(epoch)
-         
-    train_bounds.append(-train_loss)
-    test_bounds.append(-test_loss)
-
-    # generate sample in numpy and convert into torch Variable, to get around mysterious
-    # bug, where invoking torch's rand num gen somehow causes training loss to diverge 
-    sample = np.random.normal(size=(64, 20)).astype(np.float32)
-    sample = Variable(torch.from_numpy(sample))
-
-    if args.cuda:
-        sample = sample.cuda()
-    sample = decoder(sample).cpu()
-    save_image(sample.data.view(64, 1, 28, 28), 'results/sample_' + str(epoch) + '.png')
-
-    # plot loss graphs
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-    ax.plot(train_bounds, label='Train')
-    ax.plot(test_bounds, label='Test')
-    ax.set_title('MNIST (with reparameterization), N=20')
-    ax.set_xlabel('Epoch')
-    ax.set_ylabel('Lower bound')
-    ax.legend()
-    fig.savefig('results.png')
+        # generate sample in numpy and convert into torch Variable, to get around mysterious
+        # bug, where invoking torch's rand num gen somehow causes training loss to diverge 
+        sample = np.random.normal(size=(64, 20)).astype(np.float32)
+        sample = Variable(torch.from_numpy(sample))
+    
+        if args.cuda:
+            sample = sample.cuda()
+        sample = decoder(sample).cpu()
+        save_image(sample.data.view(64, 1, 28, 28), 'results/sample_' + str(epoch) + '.png')
+    
+        # plot loss graphs
+        fig = plt.figure()
+        ax = fig.add_subplot(111)
+        ax.plot(train_bounds, label='Train')
+        ax.plot(test_bounds, label='Test')
+        ax.set_title('MNIST (with reparameterization), N=20')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Lower bound')
+        ax.legend()
+        fig.savefig('results.png')
 

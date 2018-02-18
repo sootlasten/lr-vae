@@ -1,1 +1,1 @@
-# beta-vae
+![ok](lowerbound-comparison.png)
