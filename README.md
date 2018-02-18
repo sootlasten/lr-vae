@@ -1,1 +1,1 @@
-![ok](lowerbound-comparison.png)
+![](lowerbound-comparison.png)
